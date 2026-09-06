@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoScan - Waste & Toxicity Classifier</title>
+    <script src="https://jsdelivr.net"></script>
+    <script src="https://jsdelivr.net"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col items-center p-4 font-sans select-none">
+
+    <div class="w-full max-w-md bg-white rounded-3xl shadow-xl p-6 mt-6 transition-all duration-300">
+        <!-- App Title Layout -->
+        <h1 class="text-3xl font-extrabold text-center text-green-700 tracking-tight mb-1">🌱 EcoScan AI</h1>
+        <p class="text-xs text-gray-400 text-center font-medium uppercase tracking-wider mb-6">Quezon City Smart Recycling & Safety</p>
+
+        <!-- Camera / File Trigger Input -->
+        <div class="mb-5">
+            <label class="block text-sm font-semibold text-gray-700 mb-2">Scan Packaging / Ingredients:</label>
+            <div class="relative flex items-center justify-center border-2 border-dashed border-gray-300 rounded-2xl p-6 bg-gray-50 hover:bg-gray-100 transition cursor-pointer">
+                <input type="file" id="imageInput" accept="image/*" capture="environment" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full">
+                <div class="text-center pointer-events-none">
+                    <span class="text-2xl mb-1 block">📸</span>
+                    <span class="text-sm font-medium text-gray-600 block">Tap to open Camera / Upload</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Selected Image Screen Preview -->
+        <img id="imagePreview" class="w-full h-44 object-contain hidden border rounded-2xl mb-5 bg-black" />
+
+        <!-- Activity Loading Spinner -->
+        <div id="statusContainer" class="hidden flex flex-col items-center justify-center my-6 space-y-2">
+            <div class="animate-spin rounded-full h-8 w-8 border-4 border-green-600 border-t-transparent"></div>
+            <div id="statusText" class="text-sm font-medium text-gray-600 text-center px-4"></div>
+        </div>
+
+        <!-- Rendered Results Section Block -->
+        <div id="resultCard" class="hidden mt-6 border-t border-gray-100 pt-5">
+            <h2 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Waste Breakdown:</h2>
+            <div id="categoryBadge" class="inline-block px-4 py-1.5 rounded-full text-base font-black tracking-wide mb-4 shadow-sm"></div>
+            
+            <div class="space-y-4">
+                <div class="bg-gray-50 p-3 rounded-xl">
+                    <span class="text-xs font-bold text-gray-400 block uppercase">Detected Items</span>
+                    <p id="resMaterials" class="text-sm font-semibold text-gray-800"></p>
+                </div>
+
+                <!-- Clearya Inspired Chemical Dashboard Section -->
+                <div id="alertSection" class="border-t border-b border-gray-100 py-3"></div>
+
+                <div id="tipBox" class="p-3.5 rounded-xl border">
+                    <span class="text-xs font-bold text-gray-500 block uppercase mb-0.5">💡 Local Recycling Tip</span>
+                    <p id="resTip" class="text-sm font-medium text-gray-700 leading-relaxed"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // CONFIGURATION: Swap out this link string with your actual URL copied from Step 2.2
+        const BACKEND_URL = "https://ecoscan-backend-3vis.onrender.com/";
+
+        const imageInput = document.getElementById('imageInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const statusContainer = document.getElementById('statusContainer');
+        const statusText = document.getElementById('statusText');
+        const resultCard = document.getElementById('resultCard');
+
+        imageInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            resultCard.classList.add('hidden');
+            imagePreview.src = URL.createObjectURL(file);
+            imagePreview.classList.remove('hidden');
+            
+            showStatus("Reading text from image (OCR)...");
+
+            try {
+                // Free local phone-side character recognition extraction
+                const ocrResult = await Tesseract.recognize(file, 'eng');
+                const scannedText = ocrResult.data.text.trim();
+
+                if (!scannedText || scannedText.length < 3) {
+                    showStatus("❌ Blurry text. Hold camera steady and try again.");
+                    return;
+                }
+
+                showStatus("Evaluating ingredients and packaging composition...");
+                
+                // Safe dispatch to your hosted backend proxy
+                const response = await fetch(`${BACKEND_URL}/classify`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ text: scannedText })
+                });
+
+                if (!response.ok) throw new Error("Processing failed.");
+
+                const aiResponse = await response.json();
+                renderAppUI(aiResponse);
+
+            } catch (error) {
+                console.error(error);
+                showStatus("⚠️ Note: Server is spinning up. Please re-upload your photo in 30 seconds.");
+            }
+        });
+
+        function showStatus(msg) {
+            statusText.innerText = msg;
+            statusContainer.classList.remove('hidden');
+        }
+
+        function renderAppUI(data) {
+            statusContainer.classList.add('hidden');
+            resultCard.classList.remove('hidden');
+
+            // 1. Two-Tier Biodegradability Render
+            const badge = document.getElementById('categoryBadge');
+            badge.innerText = data.category;
+            if(data.category.toLowerCase().includes('non')) {
+                badge.className = "inline-block px-4 py-1.5 rounded-full text-sm font-black bg-red-50 text-red-700 border border-red-200 uppercase tracking-wide mb-4";
+            } else {
+                badge.className = "inline-block px-4 py-1.5 rounded-full text-sm font-black bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wide mb-4";
+            }
+
+            document.getElementById('resMaterials').innerText = data.materials.join(', ') || 'General materials detected';
+            document.getElementById('resTip').innerText = data.tip;
+
+            // 2. Clearya Inspired Premium Toxicity Interface Rendering
+            const alertSection = document.getElementById('alertSection');
+            
+            let statusTheme = "text-emerald-600 bg-emerald-50 border-emerald-100";
+            if (data.toxicity_status.toLowerCase().includes('high')) {
+                statusTheme = "text-rose-600 bg-rose-50 border-rose-100";
+            } else if (data.toxicity_status.toLowerCase().includes('low') || data.toxicity_status.toLowerCase().includes('caution')) {
+                statusTheme = "text-amber-600 bg-amber-50 border-amber-100";
+            }
+
+            alertSection.innerHTML = `
+                <div class="flex items-center justify-between border-b border-gray-100 pb-2 mb-3">
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">🧪 Clearya Safety Panel</span>
+                    <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded border ${statusTheme}">${data.toxicity_status}</span>
+                </div>
+            `;
+            
+            if (!data.toxicity_alerts || data.toxicity_alerts.length === 0) {
+                alertSection.innerHTML += `
+                    <div class="flex items-center gap-3 p-3 bg-emerald-50/50 rounded-xl border border-emerald-100">
+                        <span class="text-lg">🛡️</span>
+                        <div>
+                            <h4 class="text-xs font-bold text-emerald-800">Clear Ingredients Profile</h4>
+                            <p class="text-[11px] text-emerald-600/90 leading-tight">No high-risk chemical flag cross-references detected.</p>
+                        </div>
+                    </div>
+                `;
+            } else {
+                let cardsContainer = `<div class="space-y-2">`;
+                data.toxicity_alerts.forEach(alert => {
+                    let sideColor = "border-l-amber-400 bg-amber-50/30 text-amber-700";
+                    let badgeColor = "bg-amber-100 text-amber-800";
+                    let icon = "⚠️";
+
+                    if(alert.risk_color.toLowerCase() === 'red') {
+                        sideColor = "border-l-rose-500 bg-rose-50/30 text-rose-700";
+                        badgeColor = "bg-rose-100 text-rose-800";
+                        icon = "🚨";
+                    }
+
+                    cardsContainer += `
+                        <div class="flex items-start bg-white border border-gray-100 border-l-4 ${sideColor} rounded-xl p-3 shadow-xs">
+                            <div class="mr-2.5 text-sm">${icon}</div>
+                            <div class="flex-1">
+                                <div class="flex items-center flex-wrap gap-1.5 mb-0.5">
+                                    <h4 class="text-xs font-bold text-gray-800">${alert.chemical}</h4>
+                                    <span class="text-[9px] font-black uppercase px-1 rounded-sm ${badgeColor}">${alert.risk_color}</span>
+                                </div>
+                                <p class="text-[11px] text-gray-500 leading-tight">${alert.hazard_reason}</p>
+                            </div>
+                        </div>
+                    `;
+                });
+                cardsContainer += `</div>`;
+                alertSection.innerHTML += cardsContainer;
+            }
+        }
+    </script>
+</body>
+</html>
